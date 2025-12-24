@@ -4,6 +4,8 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { insertGroupSchema, insertExpenseSchema } from "@shared/schema";
+import * as fs from "fs";
+import * as path from "path";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -235,6 +237,111 @@ export async function registerRoutes(
     }
 
     res.json({ transactions });
+  });
+
+  // Bulk Import endpoint
+  app.post("/api/groups/:groupId/bulk-import", async (req, res) => {
+    try {
+      const groupId = parseInt(req.params.groupId);
+      if (isNaN(groupId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const tsvPath = path.join(process.cwd(), "attached_assets", "Pasted-Expense-Date-Paid-Amount-in-Original-Currency-Currency-_1766563166330.txt");
+      
+      if (!fs.existsSync(tsvPath)) {
+        return res.status(404).json({ message: "TSV file not found" });
+      }
+
+      const content = fs.readFileSync(tsvPath, 'utf8');
+      const lines = content.trim().split('\n');
+      const header = lines[0].split('\t').map(h => h.trim());
+
+      // Find column indices
+      const expenseIdx = header.indexOf('Expense');
+      const dateIdx = header.indexOf('Date Paid');
+      const amountIdx = header.indexOf('Amount in Original Currency');
+      const currencyIdx = header.indexOf('Currency');
+
+      // Find participant columns
+      const participants = [];
+      for (let i = 6; i < header.length; i++) {
+        if (header[i].trim() === 'Total Persons') break;
+        if (header[i].trim()) participants.push({ idx: i, name: header[i].trim() });
+      }
+
+      // Get or create participants
+      const participantMap: Record<string, number> = {};
+      const groupParticipants = await storage.getParticipants(groupId);
+      
+      for (const p of participants) {
+        let participant = groupParticipants.find(gp => gp.name === p.name);
+        if (!participant) {
+          participant = await storage.createParticipant({
+            groupId,
+            name: p.name,
+            type: "individual",
+            weight: "1.0",
+            parentParticipantId: null
+          });
+        }
+        participantMap[p.name] = participant.id;
+      }
+
+      // Delete existing expenses
+      await storage.deleteAllExpenses(groupId);
+
+      // Parse and create expenses
+      let importedCount = 0;
+      for (let i = 2; i < lines.length; i++) {
+        const row = lines[i].split('\t').map(v => v.trim());
+        if (!row[expenseIdx]) continue;
+
+        const amount = parseFloat(row[amountIdx].replace(/,/g, ''));
+        const currency = row[currencyIdx];
+        
+        // Use first participant that has a split as payer (or Deva)
+        let paidByName = 'Deva';
+        let paidById = participantMap[paidByName] || Object.values(participantMap)[0];
+
+        const expense = await storage.createExpense({
+          groupId,
+          description: row[expenseIdx],
+          amount: amount.toString(),
+          currency,
+          exchangeRate: "1.0",
+          paidByParticipantId: paidById
+        });
+
+        // Create splits based on weights
+        const splits = [];
+        for (const p of participants) {
+          const weight = parseFloat(row[p.idx]);
+          if (weight > 0) {
+            const totalWeight = participants.reduce((sum, pp) => sum + parseFloat(row[pp.idx]), 0);
+            const splitAmount = (amount * weight) / totalWeight;
+            splits.push({
+              participantId: participantMap[p.name],
+              amount: splitAmount
+            });
+          }
+        }
+
+        if (splits.length > 0) {
+          await Promise.all(splits.map(s => 
+            storage.createExpenseWithSplits(
+              { groupId, description: row[expenseIdx], amount: amount.toString(), currency, exchangeRate: "1.0", paidByParticipantId: paidById },
+              [{ participantId: s.participantId, amount: s.amount }]
+            ).catch(() => {}) // Ignore duplicate errors
+          ));
+        }
+
+        importedCount++;
+      }
+
+      res.json({ message: `Imported ${importedCount} expenses` });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // Seed Data

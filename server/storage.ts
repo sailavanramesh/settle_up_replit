@@ -28,6 +28,7 @@ export interface IStorage {
   createExpenseWithSplits(expense: InsertExpense, splits: Array<{ participantId: number; amount: number }>): Promise<Expense>;
   getExpenseSplits(expenseId: number): Promise<ExpenseSplit[]>;
   deleteExpense(expenseId: number): Promise<void>;
+  deleteAllExpenses(groupId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -155,6 +156,19 @@ export class DatabaseStorage implements IStorage {
     await db.delete(expenseSplits).where(eq(expenseSplits.expenseId, expenseId));
     // Delete the expense
     await db.delete(expenses).where(eq(expenses.id, expenseId));
+  }
+
+  async deleteAllExpenses(groupId: number): Promise<void> {
+    // Get all expenses for the group
+    const groupExpenses = await db.select().from(expenses).where(eq(expenses.groupId, groupId));
+    
+    // Delete all splits for these expenses
+    for (const exp of groupExpenses) {
+      await db.delete(expenseSplits).where(eq(expenseSplits.expenseId, exp.id));
+    }
+    
+    // Delete all expenses
+    await db.delete(expenses).where(eq(expenses.groupId, groupId));
   }
 }
 
