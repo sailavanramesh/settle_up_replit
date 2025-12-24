@@ -16,9 +16,9 @@ export const participants = pgTable("participants", {
   id: serial("id").primaryKey(),
   groupId: integer("group_id").notNull(),
   name: text("name").notNull(),
-  type: text("type").default("individual").notNull(), // 'individual' or 'group'
-  parentParticipantId: integer("parent_participant_id"), // For nested members in group participants
-  weight: numeric("weight").default("1.0").notNull(), // Weight for expense splitting
+  type: text("type").default("individual").notNull(),
+  parentParticipantId: integer("parent_participant_id"),
+  weight: numeric("weight").default("1.0").notNull(),
 });
 
 export const expenses = pgTable("expenses", {
@@ -29,6 +29,15 @@ export const expenses = pgTable("expenses", {
   currency: text("currency").notNull(),
   exchangeRate: numeric("exchange_rate").default("1.0"),
   paidByParticipantId: integer("paid_by_participant_id").notNull(),
+  date: timestamp("date").defaultNow(),
+});
+
+// Conversion rates table for historical tracking
+export const conversionRates = pgTable("conversion_rates", {
+  id: serial("id").primaryKey(),
+  fromCurrency: text("from_currency").notNull(),
+  toCurrency: text("to_currency").notNull(),
+  rate: numeric("rate").notNull(),
   date: timestamp("date").defaultNow(),
 });
 
@@ -76,6 +85,7 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true,
 export type Group = typeof groups.$inferSelect;
 export type Participant = typeof participants.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
+export type ConversionRate = typeof conversionRates.$inferSelect;
 
 export type InsertGroup = z.infer<typeof insertGroupSchema>;
 export type InsertParticipant = z.infer<typeof insertParticipantSchema>;
@@ -84,7 +94,6 @@ export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 // Request types
 export type CreateGroupRequest = InsertGroup;
 
-// For participants, support both individual and group with members
 export type AddIndividualParticipantRequest = {
   name: string;
   type: "individual";

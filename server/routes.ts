@@ -113,7 +113,7 @@ export async function registerRoutes(
     // Calculate balances with weighted splitting
     const balances: Record<number, number> = {};
     
-    // Initialize balances for all individual participants only
+    // Get all individual participants (expand groups)
     const getAllIndividuals = (participants: any[]): any[] => {
       let individuals: any[] = [];
       participants.forEach(p => {
@@ -131,36 +131,20 @@ export async function registerRoutes(
 
     const participantsMap = new Map(individuals.map(p => [p.id, p]));
 
-    // For each expense, split by weights
+    // For each expense, split by weights and convert to group currency
     group.expenses.forEach(expense => {
-      const amount = parseFloat(expense.amount) * parseFloat(expense.exchangeRate || "1.0");
+      const amount = parseFloat(expense.amount);
+      const rate = parseFloat(expense.exchangeRate || "1.0");
+      const convertedAmount = amount * rate; // Convert to group currency
       const payerId = expense.paidByParticipantId;
       
-      // Get the participant who paid
-      let splitParticipants: any[] = [];
-      const paidByParticipant = group.participants.find(p => p.id === payerId || (p.members && p.members.find((m: any) => m.id === payerId)));
-      
-      if (paidByParticipant?.type === "group") {
-        splitParticipants = paidByParticipant.members || [];
-      } else {
-        splitParticipants = [paidByParticipant].filter(Boolean);
-      }
+      // Payer gets credit for full converted amount
+      balances[payerId] = (balances[payerId] || 0) + convertedAmount;
 
-      // Calculate total weight
-      const totalWeight = splitParticipants.reduce((sum: number, p: any) => sum + parseFloat(p.weight || "1.0"), 0);
-
-      // Payer (or their group) gets credit for full amount
-      balances[payerId] = (balances[payerId] || 0) + amount;
-
-      // Split expense among individuals based on weight
+      // Split equally among all individuals
+      const splitAmount = convertedAmount / individuals.length;
       individuals.forEach(individual => {
-        // Check if this individual is in a split group or is the payer
-        const isInSplitGroup = splitParticipants.some((p: any) => p.id === individual.id);
-        if (isInSplitGroup) {
-          const weight = parseFloat(splitParticipants.find((p: any) => p.id === individual.id)?.weight || "1.0");
-          const splitAmount = (amount * weight) / totalWeight;
-          balances[individual.id] = (balances[individual.id] || 0) - splitAmount;
-        }
+        balances[individual.id] = (balances[individual.id] || 0) - splitAmount;
       });
     });
 

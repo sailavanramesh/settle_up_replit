@@ -182,9 +182,9 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {participants.map((p) => (
+                      {participants.map((p: any) => (
                         <SelectItem key={p.id} value={p.id.toString()}>
-                          {p.name}
+                          {p.type === "group" ? `${p.name} (Group)` : p.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

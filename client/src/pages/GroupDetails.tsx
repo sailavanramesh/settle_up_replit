@@ -134,23 +134,41 @@ export default function GroupDetails() {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {group.participants.map((participant) => (
+                {group.participants.map((participant: any) => (
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     key={participant.id}
                   >
                     <Card className="rounded-xl hover:shadow-md transition-shadow">
-                      <div className="p-4 flex items-center space-x-4">
-                        <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
-                          <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white font-bold">
-                            {participant.name.slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-semibold">{participant.name}</p>
-                          <p className="text-xs text-muted-foreground">Member</p>
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center space-x-4">
+                          <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
+                            <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white font-bold">
+                              {participant.name.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-semibold">{participant.name}</p>
+                            <p className="text-xs text-muted-foreground capitalize">
+                              {participant.type === "group" ? `Group (${participant.members?.length || 0} members)` : "Individual"}
+                            </p>
+                          </div>
                         </div>
+                        
+                        {participant.type === "group" && participant.members && (
+                          <div className="bg-secondary/30 rounded-lg p-3 space-y-2 border border-secondary/50">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Members</p>
+                            {participant.members.map((member: any) => (
+                              <div key={member.id} className="flex justify-between items-center text-sm">
+                                <span>{member.name}</span>
+                                <Badge variant="secondary" className="text-xs font-mono">
+                                  {Number(member.weight).toFixed(1)}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </Card>
                   </motion.div>
