@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar, Trash2, Pencil, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,6 +28,25 @@ export default function GroupDetails() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [editingParticipant, setEditingParticipant] = useState<any>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+
+  const handleRecalculateRates = async () => {
+    setIsRecalculating(true);
+    try {
+      const response = await fetch(`/api/groups/${id}/recalculate-rates`, { method: "POST" });
+      const data = await response.json();
+      if (response.ok) {
+        toast({ title: "Success", description: data.message });
+        window.location.reload();
+      } else {
+        toast({ title: "Error", description: data.message, variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to recalculate rates", variant: "destructive" });
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
 
   if (isLoading) return <GroupSkeleton />;
   if (error || !group) return <div className="p-8 text-center">Group not found</div>;
@@ -46,7 +65,17 @@ export default function GroupDetails() {
               <p className="text-xs text-muted-foreground font-mono">{group.currency}</p>
             </div>
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRecalculateRates}
+              disabled={isRecalculating}
+              title="Recalculate exchange rates for all expenses"
+              data-testid="button-recalculate-rates"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRecalculating ? "animate-spin" : ""}`} />
+            </Button>
             <div className="hidden md:block">
               <AddExpenseDialog 
                 groupId={group.id} 

@@ -63,6 +63,41 @@ export async function registerRoutes(
     }
   });
 
+  // Recalculate exchange rates for all expenses in a group
+  app.post("/api/groups/:groupId/recalculate-rates", async (req, res) => {
+    try {
+      const groupId = parseInt(req.params.groupId);
+      if (isNaN(groupId)) return res.status(400).json({ message: "Invalid group ID" });
+
+      const group = await storage.getGroupDetails(groupId);
+      if (!group) return res.status(404).json({ message: "Group not found" });
+
+      const groupCurrency = group.currency;
+      let updatedCount = 0;
+
+      for (const expense of group.expenses) {
+        if (expense.currency !== groupCurrency) {
+          const expenseDate = expense.date 
+            ? new Date(expense.date).toISOString().split("T")[0]
+            : new Date().toISOString().split("T")[0];
+          
+          const rateResult = await getExchangeRate(expense.currency, groupCurrency, expenseDate);
+          
+          await db.update(expenses)
+            .set({ exchangeRate: String(rateResult.rate) })
+            .where(eq(expenses.id, expense.id));
+          
+          updatedCount++;
+        }
+      }
+
+      res.json({ message: `Updated ${updatedCount} expenses with new exchange rates` });
+    } catch (err) {
+      console.error("Recalculate rates error:", err);
+      res.status(500).json({ message: "Failed to recalculate exchange rates" });
+    }
+  });
+
   // === Participants ===
   app.delete("/api/groups/:groupId/participants/:participantId", async (req, res) => {
     try {
