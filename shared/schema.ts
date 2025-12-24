@@ -30,6 +30,7 @@ export const expenses = pgTable("expenses", {
   exchangeRate: numeric("exchange_rate").default("1.0"),
   paidByParticipantId: integer("paid_by_participant_id").notNull(),
   splitType: text("split_type").default("equal").notNull(), // 'equal', 'percentage', 'amount'
+  receiptPath: text("receipt_path"), // Object storage path for receipt image
   date: timestamp("date").defaultNow(),
 });
 

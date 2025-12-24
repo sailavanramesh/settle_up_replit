@@ -29,8 +29,9 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Upload, X } from "lucide-react";
 import { z } from "zod";
+import { useUpload } from "@/hooks/use-upload";
 
 const CURRENCIES = ["AUD", "USD", "EUR", "GBP", "JPY", "INR", "CAD", "CHF", "SEK", "NZD", "SGD", "HKD", "MXN", "BRL"];
 
@@ -39,6 +40,7 @@ const formSchema = insertExpenseSchema.omit({ groupId: true, date: true }).exten
   exchangeRate: z.coerce.number().default(1.0),
   paidByParticipantId: z.coerce.number(),
   splitType: z.enum(["equal", "percentage", "amount"]).default("equal"),
+  receiptPath: z.string().optional(),
   splits: z.array(z.object({
     participantId: z.coerce.number(),
     amount: z.coerce.number()
@@ -57,6 +59,9 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const addExpense = useAddExpense();
+  const { uploadFile, isUploading } = useUpload();
+  const [receiptPath, setReceiptPath] = useState<string>();
+  const [receiptFile, setReceiptFile] = useState<File>();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -66,7 +71,8 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
       exchangeRate: 1.0,
       amount: 0,
       splitType: "equal",
-      splits: []
+      splits: [],
+      receiptPath: undefined
     },
   });
 
@@ -74,10 +80,11 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
   const isDifferentCurrency = selectedCurrency !== defaultCurrency;
   const splitType = form.watch("splitType");
 
-  function onSubmit(data: FormValues) {
+  async function onSubmit(data: FormValues) {
     const payload = { 
       ...data, 
       groupId,
+      receiptPath: receiptPath,
       splits: (data.splits || []).filter(s => s.participantId && s.amount)
     };
     
@@ -85,13 +92,16 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
       onSuccess: () => {
         toast({ title: "Success", description: "Expense added" });
         setOpen(false);
+        setReceiptPath(undefined);
+        setReceiptFile(undefined);
         form.reset({
           description: "",
           currency: defaultCurrency,
           exchangeRate: 1.0,
           amount: 0,
           splitType: "equal",
-          splits: []
+          splits: [],
+          receiptPath: undefined
         });
       },
       onError: (error: any) => {
@@ -102,6 +112,22 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
         });
       },
     });
+  }
+
+  const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setReceiptFile(file);
+    try {
+      const response = await uploadFile(file);
+      if (response) {
+        setReceiptPath(response.objectPath);
+        toast({ title: "Success", description: "Receipt uploaded" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to upload receipt", variant: "destructive" });
+    }
   }
 
   return (
@@ -247,6 +273,36 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
                 ))}
               </div>
             )}
+
+            <div className="space-y-2">
+              <FormLabel>Receipt (optional)</FormLabel>
+              {receiptFile ? (
+                <div className="flex items-center justify-between bg-muted/30 p-3 rounded-lg border">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Upload className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-sm truncate">{receiptFile.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceiptFile(undefined);
+                      setReceiptPath(undefined);
+                    }}
+                    className="p-1 hover:bg-muted rounded"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleReceiptUpload}
+                  disabled={isUploading}
+                  className="w-full text-sm file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 disabled:opacity-50"
+                />
+              )}
+            </div>
 
             <FormField
               control={form.control}

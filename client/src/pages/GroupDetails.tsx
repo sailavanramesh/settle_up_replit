@@ -84,29 +84,42 @@ export default function GroupDetails() {
                       key={expense.id}
                     >
                       <Card className="rounded-xl border hover:border-primary/30 transition-colors shadow-sm">
-                        <div className="p-4 flex items-center justify-between">
-                          <div className="flex items-center space-x-4">
-                            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
-                              {expense.description.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <h3 className="font-semibold text-foreground">{expense.description}</h3>
-                              <p className="text-sm text-muted-foreground flex items-center">
-                                <span className="font-medium text-primary mr-1">{expense.paidBy?.name}</span>
-                                paid • {expense.date ? format(new Date(expense.date), 'MMM d') : ''}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-bold text-lg font-mono">
-                              {expense.currency} {Number(expense.amount).toFixed(2)}
-                            </div>
-                            {expense.currency !== group.currency && (
-                              <div className="text-xs text-muted-foreground">
-                                ≈ {group.currency} {(Number(expense.amount) * Number(expense.exchangeRate)).toFixed(2)}
+                        <div className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-4 flex-1">
+                              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg flex-shrink-0">
+                                {expense.description.charAt(0).toUpperCase()}
                               </div>
-                            )}
+                              <div className="min-w-0">
+                                <h3 className="font-semibold text-foreground">{expense.description}</h3>
+                                <p className="text-sm text-muted-foreground flex items-center">
+                                  <span className="font-medium text-primary mr-1">{expense.paidBy?.name}</span>
+                                  paid • {expense.date ? format(new Date(expense.date), 'MMM d') : ''}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className="font-bold text-lg font-mono">
+                                {expense.currency} {Number(expense.amount).toFixed(2)}
+                              </div>
+                              {expense.currency !== group.currency && (
+                                <div className="text-xs text-muted-foreground">
+                                  ≈ {group.currency} {(Number(expense.amount) * Number(expense.exchangeRate)).toFixed(2)}
+                                </div>
+                              )}
+                            </div>
                           </div>
+                          {expense.receiptPath && (
+                            <a 
+                              href={expense.receiptPath} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline"
+                              data-testid="link-receipt"
+                            >
+                              View Receipt
+                            </a>
+                          )}
                         </div>
                       </Card>
                     </motion.div>
