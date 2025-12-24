@@ -3,9 +3,11 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { insertGroupSchema, insertExpenseSchema } from "@shared/schema";
+import { insertGroupSchema, insertExpenseSchema, participants } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export async function registerRoutes(
   httpServer: Server,
