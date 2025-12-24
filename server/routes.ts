@@ -87,11 +87,17 @@ export async function registerRoutes(
             ...req.body,
             amount: String(req.body.amount),
             exchangeRate: req.body.exchangeRate ? String(req.body.exchangeRate) : "1.0",
-            paidByParticipantId: Number(req.body.paidByParticipantId)
+            paidByParticipantId: Number(req.body.paidByParticipantId),
+            splitType: req.body.splitType || "equal"
         };
 
         const input = insertExpenseSchema.omit({ groupId: true }).parse(bodyWithTypes);
-        const expense = await storage.createExpense({ ...input, groupId });
+        const splits = (req.body.splits || []).map((s: any) => ({
+          participantId: Number(s.participantId),
+          amount: Number(s.amount)
+        }));
+
+        const expense = await storage.createExpenseWithSplits({ ...input, groupId }, splits);
         res.status(201).json(expense);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -131,8 +137,8 @@ export async function registerRoutes(
 
     const participantsMap = new Map(individuals.map(p => [p.id, p]));
 
-    // For each expense, split by weights and convert to group currency
-    group.expenses.forEach(expense => {
+    // For each expense, split based on split type and convert to group currency
+    for (const expense of group.expenses) {
       const amount = parseFloat(expense.amount);
       const rate = parseFloat(expense.exchangeRate || "1.0");
       const convertedAmount = amount * rate; // Convert to group currency
@@ -141,12 +147,30 @@ export async function registerRoutes(
       // Payer gets credit for full converted amount
       balances[payerId] = (balances[payerId] || 0) + convertedAmount;
 
-      // Split equally among all individuals
-      const splitAmount = convertedAmount / individuals.length;
-      individuals.forEach(individual => {
-        balances[individual.id] = (balances[individual.id] || 0) - splitAmount;
-      });
-    });
+      // Get splits for this expense
+      const splits = await storage.getExpenseSplits(expense.id);
+
+      if (expense.splitType === "equal" || splits.length === 0) {
+        // Split equally among all individuals
+        const splitAmount = convertedAmount / individuals.length;
+        individuals.forEach(individual => {
+          balances[individual.id] = (balances[individual.id] || 0) - splitAmount;
+        });
+      } else if (expense.splitType === "percentage") {
+        // Split by percentages
+        splits.forEach(split => {
+          const percentage = parseFloat(split.amount);
+          const splitAmount = (convertedAmount * percentage) / 100;
+          balances[split.participantId] = (balances[split.participantId] || 0) - splitAmount;
+        });
+      } else if (expense.splitType === "amount") {
+        // Split by absolute amounts
+        splits.forEach(split => {
+          const splitAmount = parseFloat(split.amount) * rate;
+          balances[split.participantId] = (balances[split.participantId] || 0) - splitAmount;
+        });
+      }
+    }
 
     // Vectorise/Simplify debts
     const transactions = [];

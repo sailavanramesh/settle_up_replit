@@ -32,11 +32,15 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { z } from "zod";
 
-// Enhance schema to coerce numbers from string inputs
 const formSchema = insertExpenseSchema.omit({ groupId: true, date: true }).extend({
   amount: z.coerce.number().min(0.01, "Amount is required"),
   exchangeRate: z.coerce.number().default(1.0),
   paidByParticipantId: z.coerce.number(),
+  splitType: z.enum(["equal", "percentage", "amount"]).default("equal"),
+  splits: z.array(z.object({
+    participantId: z.coerce.number(),
+    amount: z.coerce.number()
+  })).optional()
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -59,14 +63,23 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
       currency: defaultCurrency,
       exchangeRate: 1.0,
       amount: 0,
+      splitType: "equal",
+      splits: []
     },
   });
 
   const selectedCurrency = form.watch("currency");
   const isDifferentCurrency = selectedCurrency !== defaultCurrency;
+  const splitType = form.watch("splitType");
 
   function onSubmit(data: FormValues) {
-    addExpense.mutate({ ...data, groupId: groupId }, {
+    const payload = { 
+      ...data, 
+      groupId,
+      splits: (data.splits || []).filter(s => s.participantId && s.amount)
+    };
+    
+    addExpense.mutate(payload as any, {
       onSuccess: () => {
         toast({ title: "Success", description: "Expense added" });
         setOpen(false);
@@ -75,9 +88,11 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
           currency: defaultCurrency,
           exchangeRate: 1.0,
           amount: 0,
+          splitType: "equal",
+          splits: []
         });
       },
-      onError: (error) => {
+      onError: (error: any) => {
         toast({
           title: "Error",
           description: error.message,
@@ -167,6 +182,57 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
                   </FormItem>
                 )}
               />
+            )}
+
+            <FormField
+              control={form.control}
+              name="splitType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>How to split?</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="equal">Equal split</SelectItem>
+                      <SelectItem value="percentage">By percentage</SelectItem>
+                      <SelectItem value="amount">By amount</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {splitType !== "equal" && (
+              <div className="border rounded-xl p-3 bg-muted/20 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Allocate to participants</p>
+                {participants.map((p: any) => (
+                  <div key={p.id} className="flex gap-2 items-center">
+                    <span className="text-sm flex-1">{p.name}</span>
+                    <Input 
+                      type="number" 
+                      step={splitType === "percentage" ? "0.1" : "0.01"}
+                      placeholder={splitType === "percentage" ? "%" : "Amt"}
+                      className="w-24 rounded-lg h-8 text-xs"
+                      onBlur={(e) => {
+                        const splits = form.getValues("splits") || [];
+                        const idx = splits.findIndex(s => s.participantId === p.id);
+                        const val = parseFloat(e.target.value) || 0;
+                        if (idx >= 0) {
+                          splits[idx].amount = val;
+                        } else if (val > 0) {
+                          splits.push({ participantId: p.id, amount: val });
+                        }
+                        form.setValue("splits", splits);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
             )}
 
             <FormField

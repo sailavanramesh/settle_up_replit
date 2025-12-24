@@ -1,12 +1,13 @@
 import { db } from "./db";
 import {
-  groups, participants, expenses,
+  groups, participants, expenses, expenseSplits,
   type Group, type InsertGroup,
   type Participant, type InsertParticipant,
   type Expense, type InsertExpense,
+  type ExpenseSplit,
   type GroupDetailsResponse, type ParticipantResponse
 } from "@shared/schema";
-import { eq, desc, isNull } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Groups
@@ -23,6 +24,8 @@ export interface IStorage {
   // Expenses
   getExpenses(groupId: number): Promise<Expense[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
+  createExpenseWithSplits(expense: InsertExpense, splits: Array<{ participantId: number; amount: number }>): Promise<Expense>;
+  getExpenseSplits(expenseId: number): Promise<ExpenseSplit[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -60,12 +63,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getParticipants(groupId: number): Promise<ParticipantResponse[]> {
-    // Get only top-level participants (no parent)
     const topLevel = await db.select().from(participants)
       .where(eq(participants.groupId, groupId))
       .orderBy(participants.id);
 
-    // For each participant that is a group, fetch its members
     const result = await Promise.all(topLevel.map(async (p) => {
       if (p.type === 'group') {
         const members = await db.select().from(participants)
@@ -85,7 +86,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createGroupParticipant(groupId: number, name: string, members: Array<{ name: string; weight: number }>): Promise<ParticipantResponse> {
-    // Create the group participant
     const [groupParticipant] = await db.insert(participants).values({
       groupId,
       name,
@@ -93,7 +93,6 @@ export class DatabaseStorage implements IStorage {
       weight: "1.0"
     }).returning();
 
-    // Create member participants linked to the group
     const createdMembers = await Promise.all(
       members.map(m =>
         db.insert(participants).values({
@@ -119,6 +118,27 @@ export class DatabaseStorage implements IStorage {
   async createExpense(expense: InsertExpense): Promise<Expense> {
     const [newExpense] = await db.insert(expenses).values(expense).returning();
     return newExpense;
+  }
+
+  async createExpenseWithSplits(expense: InsertExpense, splits: Array<{ participantId: number; amount: number }>): Promise<Expense> {
+    const [newExpense] = await db.insert(expenses).values(expense).returning();
+    
+    // Insert splits if provided
+    if (splits.length > 0) {
+      await db.insert(expenseSplits).values(
+        splits.map(split => ({
+          expenseId: newExpense.id,
+          participantId: split.participantId,
+          amount: String(split.amount)
+        }))
+      );
+    }
+
+    return newExpense;
+  }
+
+  async getExpenseSplits(expenseId: number): Promise<ExpenseSplit[]> {
+    return await db.select().from(expenseSplits).where(eq(expenseSplits.expenseId, expenseId));
   }
 }
 
