@@ -217,6 +217,7 @@ export async function registerRoutes(
     if (isNaN(groupId)) return res.status(400).json({ message: "Invalid ID" });
 
     try {
+        console.log("Received expense request body:", JSON.stringify(req.body, null, 2));
         const rawDate = req.body.expenseDate || req.body.date;
         const dateValue = rawDate ? new Date(rawDate) : new Date();
         const bodyWithTypes = {
@@ -226,10 +227,13 @@ export async function registerRoutes(
             exchangeRate: req.body.exchangeRate ? String(req.body.exchangeRate) : "1.0",
             paidByParticipantId: Number(req.body.paidByParticipantId),
             splitType: req.body.splitType || "equal",
-            receiptPath: req.body.receiptPath || null
+            receiptPath: req.body.receiptPath || null,
+            date: dateValue
         };
+        console.log("Processed bodyWithTypes:", JSON.stringify(bodyWithTypes, null, 2));
 
         const input = insertExpenseSchema.omit({ groupId: true }).parse(bodyWithTypes);
+        console.log("Validated input:", JSON.stringify(input, null, 2));
         const rawSplits = req.body.splits || [];
         const splits = rawSplits
           .filter((s: any) => s && s.participantId != null && s.amount != null)
@@ -244,7 +248,7 @@ export async function registerRoutes(
           if (splits.length === 0) {
             return res.status(400).json({ message: "Percentage splits require at least one participant split" });
           }
-          const totalPercentage = splits.reduce((sum, s) => sum + s.amount, 0);
+          const totalPercentage = splits.reduce((sum: number, s: { participantId: number; amount: number }) => sum + s.amount, 0);
           if (Math.abs(totalPercentage - 100) > 0.01) {
             return res.status(400).json({ message: "Percentage splits must total 100%" });
           }
@@ -252,14 +256,14 @@ export async function registerRoutes(
           if (splits.length === 0) {
             return res.status(400).json({ message: "Amount splits require at least one participant split" });
           }
-          const totalAmount = splits.reduce((sum, s) => sum + s.amount, 0);
+          const totalAmount = splits.reduce((sum: number, s: { participantId: number; amount: number }) => sum + s.amount, 0);
           const expenseAmount = parseFloat(input.amount);
           if (Math.abs(totalAmount - expenseAmount) > 0.01) {
             return res.status(400).json({ message: "Amount splits must equal the total expense amount" });
           }
         }
 
-        const expense = await storage.createExpenseWithSplits({ ...input, groupId, date: dateValue }, splits);
+        const expense = await storage.createExpenseWithSplits({ ...input, groupId }, splits);
         res.status(201).json(expense);
     } catch (err) {
       if (err instanceof z.ZodError) {

@@ -100,7 +100,7 @@ export const expenseSplitsRelations = relations(expenseSplits, ({ one }) => ({
 
 export const insertGroupSchema = createInsertSchema(groups).omit({ id: true, createdAt: true });
 export const insertParticipantSchema = createInsertSchema(participants).omit({ id: true });
-export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, date: true });
+export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true });
 export const insertExpenseSplitSchema = createInsertSchema(expenseSplits).omit({ id: true });
 
 // === EXPLICIT API CONTRACT TYPES ===
