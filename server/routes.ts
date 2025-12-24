@@ -325,12 +325,16 @@ export async function registerRoutes(
           }
         }
 
+        // Insert splits for this expense
         if (splits.length > 0) {
+          const { db } = await import('./db');
+          const { expenseSplits } = await import('@shared/schema');
           await Promise.all(splits.map(s => 
-            storage.createExpenseWithSplits(
-              { groupId, description: row[expenseIdx], amount: amount.toString(), currency, exchangeRate: "1.0", paidByParticipantId: paidById },
-              [{ participantId: s.participantId, amount: s.amount }]
-            ).catch(() => {}) // Ignore duplicate errors
+            db.insert(expenseSplits).values({
+              expenseId: expense.id,
+              participantId: s.participantId,
+              amount: s.amount.toString()
+            })
           ));
         }
 
