@@ -143,3 +143,67 @@ export function useDeleteExpense() {
     },
   });
 }
+
+// Update a participant
+export function useUpdateParticipant() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, participantId, data }: { 
+      groupId: number; 
+      participantId: number;
+      data: { name?: string; weight?: number; type?: string }
+    }) => {
+      const res = await fetch(`/api/groups/${groupId}/participants/${participantId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update participant");
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.groups.get.path, variables.groupId] });
+      queryClient.invalidateQueries({ queryKey: [api.groups.settlements.path, variables.groupId] });
+    },
+  });
+}
+
+// Convert participant type (individual <-> group)
+export function useConvertParticipant() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, participantId, force }: { groupId: number; participantId: number; force?: boolean }) => {
+      const res = await fetch(`/api/groups/${groupId}/participants/${participantId}/convert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const error = new Error(data.message || "Failed to convert participant") as Error & { blocked?: boolean; affectedExpenses?: any[] };
+        (error as any).blocked = data.blocked;
+        (error as any).affectedExpenses = data.affectedExpenses;
+        throw error;
+      }
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.groups.get.path, variables.groupId] });
+      queryClient.invalidateQueries({ queryKey: [api.groups.settlements.path, variables.groupId] });
+    },
+  });
+}
+
+// Get affected expenses for a participant
+export function useAffectedExpenses(groupId: number, participantId: number | null) {
+  return useQuery({
+    queryKey: ["/api/affected-expenses", groupId, participantId],
+    queryFn: async () => {
+      if (!participantId) return [];
+      const res = await fetch(`/api/groups/${groupId}/participants/${participantId}/affected-expenses`);
+      if (!res.ok) throw new Error("Failed to fetch affected expenses");
+      return res.json();
+    },
+    enabled: !!participantId,
+  });
+}

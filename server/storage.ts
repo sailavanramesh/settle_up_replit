@@ -7,7 +7,7 @@ import {
   type ExpenseSplit,
   type GroupDetailsResponse, type ParticipantResponse
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or } from "drizzle-orm";
 
 export interface IStorage {
   // Groups
@@ -18,9 +18,12 @@ export interface IStorage {
 
   // Participants
   getParticipants(groupId: number): Promise<ParticipantResponse[]>;
+  getParticipant(participantId: number): Promise<Participant | undefined>;
   createParticipant(participant: InsertParticipant): Promise<Participant>;
   createGroupParticipant(groupId: number, name: string, members: Array<{ name: string; weight: number }>): Promise<ParticipantResponse>;
+  updateParticipant(participantId: number, data: { name?: string; weight?: string; type?: string }): Promise<Participant>;
   deleteParticipant(participantId: number): Promise<void>;
+  getAffectedExpenses(participantId: number): Promise<Expense[]>;
 
   // Expenses
   getExpenses(groupId: number): Promise<Expense[]>;
@@ -83,9 +86,61 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async getParticipant(participantId: number): Promise<Participant | undefined> {
+    const [p] = await db.select().from(participants).where(eq(participants.id, participantId));
+    return p;
+  }
+
   async createParticipant(participant: InsertParticipant): Promise<Participant> {
     const [newParticipant] = await db.insert(participants).values(participant).returning();
     return newParticipant;
+  }
+
+  async updateParticipant(participantId: number, data: { name?: string; weight?: string; type?: string }): Promise<Participant> {
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.weight !== undefined) updateData.weight = data.weight;
+    if (data.type !== undefined) updateData.type = data.type;
+    
+    const [updated] = await db.update(participants)
+      .set(updateData)
+      .where(eq(participants.id, participantId))
+      .returning();
+    return updated;
+  }
+
+  async getAffectedExpenses(participantId: number): Promise<Expense[]> {
+    // Get the participant and its children (if it's a group)
+    const children = await db.select().from(participants).where(eq(participants.parentParticipantId, participantId));
+    const allParticipantIds = [participantId, ...children.map(c => c.id)];
+    
+    // Get all splits for this participant and its children
+    const allSplits: typeof expenseSplits.$inferSelect[] = [];
+    for (const pid of allParticipantIds) {
+      const splits = await db.select().from(expenseSplits).where(eq(expenseSplits.participantId, pid));
+      allSplits.push(...splits);
+    }
+    
+    // Get all expenses where any of these participants are the payer
+    const allPaidExpenses: Expense[] = [];
+    for (const pid of allParticipantIds) {
+      const paidExpenses = await db.select().from(expenses).where(eq(expenses.paidByParticipantId, pid));
+      allPaidExpenses.push(...paidExpenses);
+    }
+    
+    const splitExpenseIds = allSplits.map(s => s.expenseId);
+    const allExpenseIds = [...new Set([...splitExpenseIds, ...allPaidExpenses.map(e => e.id)])];
+    
+    if (allExpenseIds.length === 0) return [];
+    
+    const affected = await Promise.all(
+      allExpenseIds.map(async (id) => {
+        const [exp] = await db.select().from(expenses).where(eq(expenses.id, id));
+        return exp;
+      })
+    );
+    
+    return affected.filter(Boolean);
   }
 
   async createGroupParticipant(groupId: number, name: string, members: Array<{ name: string; weight: number }>): Promise<ParticipantResponse> {

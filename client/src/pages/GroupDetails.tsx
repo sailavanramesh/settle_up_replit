@@ -3,13 +3,14 @@ import { useRoute } from "wouter";
 import { AddParticipantDialog } from "@/components/AddParticipantDialog";
 import { AddExpenseDialog } from "@/components/AddExpenseDialog";
 import { ExpenseDetailDialog } from "@/components/ExpenseDetailDialog";
+import { EditParticipantDialog } from "@/components/EditParticipantDialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,6 +26,8 @@ export default function GroupDetails() {
   const deleteExpense = useDeleteExpense();
   const [selectedExpense, setSelectedExpense] = useState<any>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [editingParticipant, setEditingParticipant] = useState<any>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   if (isLoading) return <GroupSkeleton />;
   if (error || !group) return <div className="p-8 text-center">Group not found</div>;
@@ -206,24 +209,37 @@ export default function GroupDetails() {
                               </p>
                             </div>
                           </div>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => {
-                              deleteParticipant.mutate({ groupId: group.id, participantId: participant.id }, {
-                                onSuccess: () => {
-                                  toast({ title: "Success", description: "Participant deleted" });
-                                },
-                                onError: (error: any) => {
-                                  toast({ title: "Error", description: error.message, variant: "destructive" });
-                                }
-                              });
-                            }}
-                            disabled={deleteParticipant.isPending}
-                            data-testid="button-delete-participant"
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingParticipant(participant);
+                                setEditDialogOpen(true);
+                              }}
+                              data-testid="button-edit-participant"
+                            >
+                              <Pencil className="w-4 h-4 text-muted-foreground" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => {
+                                deleteParticipant.mutate({ groupId: group.id, participantId: participant.id }, {
+                                  onSuccess: () => {
+                                    toast({ title: "Success", description: "Participant deleted" });
+                                  },
+                                  onError: (error: any) => {
+                                    toast({ title: "Error", description: error.message, variant: "destructive" });
+                                  }
+                                });
+                              }}
+                              disabled={deleteParticipant.isPending}
+                              data-testid="button-delete-participant"
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
                         </div>
                         
                         {participant.type === "group" && participant.members && (
@@ -253,6 +269,13 @@ export default function GroupDetails() {
         expense={selectedExpense}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+      />
+
+      <EditParticipantDialog
+        groupId={group.id}
+        participant={editingParticipant}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
       />
     </div>
   );

@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { insertGroupSchema, insertExpenseSchema, participants } from "@shared/schema";
+import { insertGroupSchema, insertExpenseSchema, participants, expenseSplits, expenses } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 import { db } from "./db";
@@ -51,6 +51,104 @@ export async function registerRoutes(
 
       await storage.deleteParticipant(participantId);
       res.status(200).json({ message: "Participant deleted" });
+    } catch (err) {
+      throw err;
+    }
+  });
+
+  // Update participant
+  app.patch("/api/groups/:groupId/participants/:participantId", async (req, res) => {
+    try {
+      const participantId = parseInt(req.params.participantId);
+      if (isNaN(participantId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const input = z.object({
+        name: z.string().optional(),
+        weight: z.coerce.number().positive().optional(),
+        type: z.enum(["individual", "group"]).optional()
+      }).parse(req.body);
+
+      const updateData: { name?: string; weight?: string; type?: string } = {};
+      if (input.name) updateData.name = input.name;
+      if (input.weight) updateData.weight = String(input.weight);
+      if (input.type) updateData.type = input.type;
+
+      const updated = await storage.updateParticipant(participantId, updateData);
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
+  });
+
+  // Get affected expenses for a participant
+  app.get("/api/groups/:groupId/participants/:participantId/affected-expenses", async (req, res) => {
+    try {
+      const participantId = parseInt(req.params.participantId);
+      if (isNaN(participantId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const affected = await storage.getAffectedExpenses(participantId);
+      res.json(affected);
+    } catch (err) {
+      throw err;
+    }
+  });
+
+  // Convert participant type (individual <-> group)
+  app.post("/api/groups/:groupId/participants/:participantId/convert", async (req, res) => {
+    try {
+      const participantId = parseInt(req.params.participantId);
+      const groupId = parseInt(req.params.groupId);
+      const forceConvert = req.body?.force === true;
+      
+      if (isNaN(participantId) || isNaN(groupId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const participant = await storage.getParticipant(participantId);
+      if (!participant) return res.status(404).json({ message: "Participant not found" });
+
+      const newType = participant.type === "individual" ? "group" : "individual";
+      
+      // Get affected expenses before conversion
+      const affectedExpenses = await storage.getAffectedExpenses(participantId);
+      
+      // Block conversion if there are affected expenses and force is not set
+      if (affectedExpenses.length > 0 && !forceConvert) {
+        return res.status(400).json({ 
+          message: `Cannot convert: ${affectedExpenses.length} expense(s) are linked to this participant or its members. Delete these expenses first or use force=true.`,
+          affectedExpenses,
+          blocked: true
+        });
+      }
+      
+      // If converting group to individual with force, handle child members
+      if (participant.type === "group") {
+        // Get child members
+        const children = await db.select().from(participants).where(eq(participants.parentParticipantId, participantId));
+        
+        for (const child of children) {
+          // Reassign expenses where child was payer to the parent group
+          await db.update(expenses)
+            .set({ paidByParticipantId: participantId })
+            .where(eq(expenses.paidByParticipantId, child.id));
+          
+          // Delete expense splits for child members
+          await db.delete(expenseSplits).where(eq(expenseSplits.participantId, child.id));
+        }
+        
+        // Delete child members
+        await db.delete(participants).where(eq(participants.parentParticipantId, participantId));
+      }
+      
+      // Update participant type
+      const updated = await storage.updateParticipant(participantId, { type: newType });
+      
+      res.json({
+        participant: updated,
+        affectedExpenses: affectedExpenses,
+        message: `Converted to ${newType}. ${affectedExpenses.length} expense(s) may need review.`
+      });
     } catch (err) {
       throw err;
     }
