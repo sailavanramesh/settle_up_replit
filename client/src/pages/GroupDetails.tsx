@@ -2,6 +2,7 @@ import { useGroup, useSettlements, useDeleteParticipant, useDeleteExpense } from
 import { useRoute } from "wouter";
 import { AddParticipantDialog } from "@/components/AddParticipantDialog";
 import { AddExpenseDialog } from "@/components/AddExpenseDialog";
+import { ExpenseDetailDialog } from "@/components/ExpenseDetailDialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +14,7 @@ import { format } from "date-fns";
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 export default function GroupDetails() {
   const [, params] = useRoute("/groups/:id");
@@ -21,6 +23,8 @@ export default function GroupDetails() {
   const { toast } = useToast();
   const deleteParticipant = useDeleteParticipant();
   const deleteExpense = useDeleteExpense();
+  const [selectedExpense, setSelectedExpense] = useState<any>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   if (isLoading) return <GroupSkeleton />;
   if (error || !group) return <div className="p-8 text-center">Group not found</div>;
@@ -88,7 +92,14 @@ export default function GroupDetails() {
                       animate={{ opacity: 1, y: 0 }}
                       key={expense.id}
                     >
-                      <Card className="rounded-xl border hover:border-primary/30 transition-colors shadow-sm">
+                      <Card 
+                        className="rounded-xl border hover:border-primary/30 transition-colors shadow-sm cursor-pointer hover:bg-secondary/20"
+                        onClick={() => {
+                          setSelectedExpense(expense);
+                          setDetailOpen(true);
+                        }}
+                        data-testid="card-expense"
+                      >
                         <div className="p-4 space-y-3">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center space-x-4 flex-1 min-w-0">
@@ -117,7 +128,8 @@ export default function GroupDetails() {
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   deleteExpense.mutate({ groupId: group.id, expenseId: expense.id }, {
                                     onSuccess: () => {
                                       toast({ title: "Success", description: "Expense deleted" });
@@ -236,6 +248,12 @@ export default function GroupDetails() {
           </AnimatePresence>
         </Tabs>
       </main>
+
+      <ExpenseDetailDialog 
+        expense={selectedExpense}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }

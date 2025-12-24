@@ -239,6 +239,28 @@ export async function registerRoutes(
     res.json({ transactions });
   });
 
+  // Get expense splits
+  app.get("/api/expenses/:expenseId/splits", async (req, res) => {
+    try {
+      const expenseId = parseInt(req.params.expenseId);
+      if (isNaN(expenseId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const splits = await storage.getExpenseSplits(expenseId);
+      
+      // Enrich with participant info
+      const enrichedSplits = await Promise.all(
+        splits.map(async (split) => {
+          const [participant] = await db.select().from(participants).where(eq(participants.id, split.participantId));
+          return { ...split, participant };
+        })
+      );
+
+      res.json(enrichedSplits);
+    } catch (err) {
+      throw err;
+    }
+  });
+
   // Bulk Import endpoint
   app.post("/api/groups/:groupId/bulk-import", async (req, res) => {
     try {
