@@ -230,10 +230,34 @@ export async function registerRoutes(
         };
 
         const input = insertExpenseSchema.omit({ groupId: true }).parse(bodyWithTypes);
-        const splits = (req.body.splits || []).map((s: any) => ({
-          participantId: Number(s.participantId),
-          amount: Number(s.amount)
-        }));
+        const rawSplits = req.body.splits || [];
+        const splits = rawSplits
+          .filter((s: any) => s && s.participantId != null && s.amount != null)
+          .map((s: any) => ({
+            participantId: Number(s.participantId),
+            amount: Number(s.amount)
+          }))
+          .filter((s: { participantId: number; amount: number }) => !isNaN(s.participantId) && !isNaN(s.amount));
+
+        const splitType = input.splitType;
+        if (splitType === "percentage") {
+          if (splits.length === 0) {
+            return res.status(400).json({ message: "Percentage splits require at least one participant split" });
+          }
+          const totalPercentage = splits.reduce((sum, s) => sum + s.amount, 0);
+          if (Math.abs(totalPercentage - 100) > 0.01) {
+            return res.status(400).json({ message: "Percentage splits must total 100%" });
+          }
+        } else if (splitType === "amount") {
+          if (splits.length === 0) {
+            return res.status(400).json({ message: "Amount splits require at least one participant split" });
+          }
+          const totalAmount = splits.reduce((sum, s) => sum + s.amount, 0);
+          const expenseAmount = parseFloat(input.amount);
+          if (Math.abs(totalAmount - expenseAmount) > 0.01) {
+            return res.status(400).json({ message: "Amount splits must equal the total expense amount" });
+          }
+        }
 
         const expense = await storage.createExpenseWithSplits({ ...input, groupId, date: dateValue }, splits);
         res.status(201).json(expense);
