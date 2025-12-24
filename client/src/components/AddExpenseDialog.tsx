@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertExpenseSchema, type Participant } from "@shared/schema";
+import { type Participant } from "@shared/schema";
 import { useAddExpense } from "@/hooks/use-groups";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -19,6 +19,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import {
   Select,
@@ -29,18 +30,22 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus, Upload, X } from "lucide-react";
+import { Plus, Upload, X, Loader2, RefreshCw } from "lucide-react";
 import { z } from "zod";
 import { useUpload } from "@/hooks/use-upload";
+import { format } from "date-fns";
 
 const CURRENCIES = ["AUD", "USD", "EUR", "GBP", "JPY", "INR", "CAD", "CHF", "SEK", "NZD", "SGD", "HKD", "MXN", "BRL"];
 
-const formSchema = insertExpenseSchema.omit({ groupId: true, date: true }).extend({
+const formSchema = z.object({
+  description: z.string().min(1, "Description is required"),
   amount: z.coerce.number().min(0.01, "Amount is required"),
+  currency: z.string().min(1, "Currency is required"),
   exchangeRate: z.coerce.number().default(1.0),
   paidByParticipantId: z.coerce.number(),
   splitType: z.enum(["equal", "percentage", "amount"]).default("equal"),
   receiptPath: z.string().optional(),
+  expenseDate: z.string().default(() => format(new Date(), "yyyy-MM-dd")),
   splits: z.array(z.object({
     participantId: z.coerce.number(),
     amount: z.coerce.number()
@@ -62,6 +67,8 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
   const { uploadFile, isUploading } = useUpload();
   const [receiptPath, setReceiptPath] = useState<string>();
   const [receiptFile, setReceiptFile] = useState<File>();
+  const [isFetchingRate, setIsFetchingRate] = useState(false);
+  const [rateSource, setRateSource] = useState<string>("");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -72,13 +79,43 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
       amount: 0,
       splitType: "equal",
       splits: [],
-      receiptPath: undefined
+      receiptPath: undefined,
+      expenseDate: format(new Date(), "yyyy-MM-dd")
     },
   });
 
   const selectedCurrency = form.watch("currency");
+  const expenseDate = form.watch("expenseDate");
   const isDifferentCurrency = selectedCurrency !== defaultCurrency;
   const splitType = form.watch("splitType");
+
+  const fetchExchangeRate = async () => {
+    if (selectedCurrency === defaultCurrency) {
+      form.setValue("exchangeRate", 1.0);
+      setRateSource("");
+      return;
+    }
+
+    setIsFetchingRate(true);
+    try {
+      const response = await fetch(`/api/exchange-rate?from=${selectedCurrency}&to=${defaultCurrency}&date=${expenseDate}`);
+      if (response.ok) {
+        const data = await response.json();
+        form.setValue("exchangeRate", data.rate);
+        setRateSource(data.source === "cache" ? "cached" : data.source === "api" ? "live" : "fallback");
+      }
+    } catch (error) {
+      console.error("Failed to fetch exchange rate:", error);
+    } finally {
+      setIsFetchingRate(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isDifferentCurrency && expenseDate) {
+      fetchExchangeRate();
+    }
+  }, [selectedCurrency, expenseDate, defaultCurrency]);
 
   async function onSubmit(data: FormValues) {
     const payload = { 
@@ -101,8 +138,10 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
           amount: 0,
           splitType: "equal",
           splits: [],
-          receiptPath: undefined
+          receiptPath: undefined,
+          expenseDate: format(new Date(), "yyyy-MM-dd")
         });
+        setRateSource("");
       },
       onError: (error: any) => {
         toast({
@@ -154,7 +193,21 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Input placeholder="Dinner, Taxi, Hotel..." {...field} className="rounded-xl" />
+                    <Input placeholder="Dinner, Taxi, Hotel..." {...field} className="rounded-xl" data-testid="input-expense-description" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="expenseDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Date</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} className="rounded-xl" data-testid="input-expense-date" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -213,10 +266,32 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
                 name="exchangeRate"
                 render={({ field }) => (
                   <FormItem className="bg-muted/50 p-3 rounded-xl">
-                    <FormLabel>Exchange Rate (1 {selectedCurrency} = ? {defaultCurrency})</FormLabel>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>Exchange Rate (1 {selectedCurrency} = ? {defaultCurrency})</FormLabel>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={fetchExchangeRate}
+                        disabled={isFetchingRate}
+                        className="h-6 px-2"
+                        data-testid="button-refresh-rate"
+                      >
+                        {isFetchingRate ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3 h-3" />
+                        )}
+                      </Button>
+                    </div>
                     <FormControl>
-                      <Input type="number" step="0.0001" {...field} className="rounded-xl bg-white" />
+                      <Input type="number" step="0.0001" {...field} className="rounded-xl bg-white dark:bg-background" data-testid="input-exchange-rate" />
                     </FormControl>
+                    {rateSource && (
+                      <FormDescription className="text-xs">
+                        Rate {rateSource === "live" ? "fetched from exchange API" : rateSource === "cached" ? "from cache" : "using fallback"} for {expenseDate}
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

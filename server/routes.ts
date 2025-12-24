@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
+import { getExchangeRate } from "./exchangeRates";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -41,6 +42,25 @@ export async function registerRoutes(
     if (!group) return res.status(404).json({ message: "Group not found" });
 
     res.json(group);
+  });
+
+  // === Exchange Rates ===
+  app.get("/api/exchange-rate", async (req, res) => {
+    try {
+      const { from, to, date } = req.query;
+      
+      if (!from || !to) {
+        return res.status(400).json({ message: "Missing from or to currency" });
+      }
+
+      const rateDate = date ? String(date) : new Date().toISOString().split("T")[0];
+      const result = await getExchangeRate(String(from), String(to), rateDate);
+      
+      res.json(result);
+    } catch (err) {
+      console.error("Exchange rate error:", err);
+      res.status(500).json({ message: "Failed to fetch exchange rate" });
+    }
   });
 
   // === Participants ===
@@ -197,12 +217,16 @@ export async function registerRoutes(
     if (isNaN(groupId)) return res.status(400).json({ message: "Invalid ID" });
 
     try {
+        const rawDate = req.body.expenseDate || req.body.date;
+        const dateValue = rawDate ? new Date(rawDate) : new Date();
         const bodyWithTypes = {
-            ...req.body,
+            description: req.body.description,
             amount: String(req.body.amount),
+            currency: req.body.currency,
             exchangeRate: req.body.exchangeRate ? String(req.body.exchangeRate) : "1.0",
             paidByParticipantId: Number(req.body.paidByParticipantId),
-            splitType: req.body.splitType || "equal"
+            splitType: req.body.splitType || "equal",
+            receiptPath: req.body.receiptPath || null
         };
 
         const input = insertExpenseSchema.omit({ groupId: true }).parse(bodyWithTypes);
@@ -211,7 +235,7 @@ export async function registerRoutes(
           amount: Number(s.amount)
         }));
 
-        const expense = await storage.createExpenseWithSplits({ ...input, groupId }, splits);
+        const expense = await storage.createExpenseWithSplits({ ...input, groupId, date: dateValue }, splits);
         res.status(201).json(expense);
     } catch (err) {
       if (err instanceof z.ZodError) {
