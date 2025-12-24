@@ -158,6 +158,16 @@ export type Transaction = {
   currency: string;
 };
 
+export type BalanceDetail = {
+  id: number;
+  name: string;
+  balance: number;
+  paid: number;
+  owes: number;
+};
+
 export type SettlementResponse = {
   transactions: Transaction[];
+  balanceDetails?: BalanceDetail[];
+  currency?: string;
 };

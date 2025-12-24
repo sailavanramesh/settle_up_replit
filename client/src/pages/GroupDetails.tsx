@@ -1,4 +1,5 @@
 import { useGroup, useSettlements, useDeleteParticipant, useDeleteExpense } from "@/hooks/use-groups";
+import type { BalanceDetail } from "@shared/schema";
 import { useRoute } from "wouter";
 import { AddParticipantDialog } from "@/components/AddParticipantDialog";
 import { AddExpenseDialog } from "@/components/AddExpenseDialog";
@@ -10,7 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar, Trash2, Pencil, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar, Trash2, Pencil, RefreshCw, Info, Calculator } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -313,6 +315,7 @@ export default function GroupDetails() {
 
 function SettlementsView({ groupId }: { groupId: number }) {
   const { data: settlement, isLoading } = useSettlements(groupId);
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   if (isLoading) return <div className="p-8 text-center">Calculating balances...</div>;
 
@@ -325,6 +328,9 @@ function SettlementsView({ groupId }: { groupId: number }) {
       />
     );
   }
+
+  const currency = settlement.currency || "AUD";
+  const balanceDetails = settlement.balanceDetails || [];
 
   return (
     <div className="space-y-4">
@@ -352,11 +358,79 @@ function SettlementsView({ groupId }: { groupId: number }) {
           </Card>
         </motion.div>
       ))}
-      <Card className="bg-primary/5 border-primary/10 mt-6">
-        <CardContent className="p-4 text-center text-sm text-muted-foreground">
-          These are the optimal transactions to settle all debts in the group.
+      
+      <Card 
+        className="bg-primary/5 border-primary/10 mt-6 cursor-pointer hover-elevate"
+        onClick={() => setShowBreakdown(true)}
+        data-testid="card-show-breakdown"
+      >
+        <CardContent className="p-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+          <Info className="w-4 h-4" />
+          Click to see how these amounts were calculated
         </CardContent>
       </Card>
+
+      <Dialog open={showBreakdown} onOpenChange={setShowBreakdown}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Balance Breakdown</DialogTitle>
+            <DialogDescription>
+              How each person's balance was calculated
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+            <div className="text-sm text-muted-foreground mb-4">
+              Each person's balance = What they paid - What they owe
+            </div>
+            
+            {balanceDetails.map((detail: BalanceDetail) => (
+              <Card key={detail.id} className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-semibold">{detail.name}</span>
+                  <Badge 
+                    variant={detail.balance >= 0 ? "default" : "destructive"}
+                    className="font-mono"
+                  >
+                    {detail.balance >= 0 ? "+" : ""}{detail.balance.toFixed(2)} {currency}
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                    <div className="text-xs text-muted-foreground mb-1">Total Paid</div>
+                    <div className="font-mono font-semibold text-green-600 dark:text-green-400">
+                      {currency} {detail.paid.toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+                    <div className="text-xs text-muted-foreground mb-1">Share Owed</div>
+                    <div className="font-mono font-semibold text-red-600 dark:text-red-400">
+                      {currency} {detail.owes.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
+                  {detail.paid.toFixed(2)} - {detail.owes.toFixed(2)} = {detail.balance >= 0 ? "+" : ""}{detail.balance.toFixed(2)}
+                </div>
+              </Card>
+            ))}
+            
+            <div className="bg-muted/50 rounded-lg p-4 text-sm">
+              <div className="font-semibold mb-2 flex items-center gap-2">
+                <Calculator className="w-4 h-4" />
+                Settlement Algorithm
+              </div>
+              <p className="text-muted-foreground">
+                After calculating each person's balance, we use a "vectorization" algorithm 
+                to minimize the number of transactions needed. Instead of everyone paying 
+                everyone else, we match debtors with creditors optimally.
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -423,7 +423,59 @@ export async function registerRoutes(
       if (creditor.amount < 0.01) j++;
     }
 
-    res.json({ transactions });
+    // Build detailed balance breakdown for visualization
+    const balanceDetails = individuals.map(p => ({
+      id: p.id,
+      name: p.name,
+      balance: Math.round((balances[p.id] || 0) * 100) / 100,
+      paid: 0,
+      owes: 0
+    }));
+
+    // Calculate paid/owes per participant
+    for (const expense of group.expenses) {
+      const amount = parseFloat(expense.amount);
+      const rate = parseFloat(expense.exchangeRate || "1.0");
+      const convertedAmount = amount * rate;
+      const payerId = expense.paidByParticipantId;
+      
+      const payerDetail = balanceDetails.find(b => b.id === payerId);
+      if (payerDetail) payerDetail.paid += convertedAmount;
+
+      const splits = await storage.getExpenseSplits(expense.id);
+      
+      if (expense.splitType === "equal" || splits.length === 0) {
+        const splitAmount = convertedAmount / individuals.length;
+        balanceDetails.forEach(detail => {
+          detail.owes += splitAmount;
+        });
+      } else if (expense.splitType === "percentage") {
+        splits.forEach(split => {
+          const percentage = parseFloat(split.amount);
+          const splitAmount = (convertedAmount * percentage) / 100;
+          const detail = balanceDetails.find(b => b.id === split.participantId);
+          if (detail) detail.owes += splitAmount;
+        });
+      } else if (expense.splitType === "amount") {
+        splits.forEach(split => {
+          const splitAmount = parseFloat(split.amount) * rate;
+          const detail = balanceDetails.find(b => b.id === split.participantId);
+          if (detail) detail.owes += splitAmount;
+        });
+      }
+    }
+
+    // Round values
+    balanceDetails.forEach(d => {
+      d.paid = Math.round(d.paid * 100) / 100;
+      d.owes = Math.round(d.owes * 100) / 100;
+    });
+
+    res.json({ 
+      transactions, 
+      balanceDetails,
+      currency: group.currency
+    });
   });
 
   // Get expense splits

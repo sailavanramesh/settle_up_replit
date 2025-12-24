@@ -56,7 +56,15 @@ export const api = {
             to: z.string(),
             amount: z.number(),
             currency: z.string()
-          }))
+          })),
+          balanceDetails: z.array(z.object({
+            id: z.number(),
+            name: z.string(),
+            balance: z.number(),
+            paid: z.number(),
+            owes: z.number()
+          })).optional(),
+          currency: z.string().optional()
         }),
         404: errorSchemas.notFound,
       },
