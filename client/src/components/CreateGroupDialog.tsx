@@ -20,9 +20,18 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+
+const CURRENCIES = ["AUD", "USD", "EUR", "GBP", "JPY", "INR", "CAD", "CHF", "SEK", "NZD", "SGD", "HKD", "MXN", "BRL"];
 
 export function CreateGroupDialog() {
   const [open, setOpen] = useState(false);

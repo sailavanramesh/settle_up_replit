@@ -32,6 +32,8 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { z } from "zod";
 
+const CURRENCIES = ["AUD", "USD", "EUR", "GBP", "JPY", "INR", "CAD", "CHF", "SEK", "NZD", "SGD", "HKD", "MXN", "BRL"];
+
 const formSchema = insertExpenseSchema.omit({ groupId: true, date: true }).extend({
   amount: z.coerce.number().min(0.01, "Amount is required"),
   exchangeRate: z.coerce.number().default(1.0),
@@ -159,9 +161,20 @@ export function AddExpenseDialog({ groupId, participants, defaultCurrency }: Add
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Currency</FormLabel>
-                    <FormControl>
-                      <Input placeholder="AUD" {...field} className="rounded-xl" />
-                    </FormControl>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CURRENCIES.map((curr) => (
+                          <SelectItem key={curr} value={curr}>
+                            {curr}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
