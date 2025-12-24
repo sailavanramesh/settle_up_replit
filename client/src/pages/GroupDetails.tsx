@@ -1,4 +1,4 @@
-import { useGroup, useSettlements } from "@/hooks/use-groups";
+import { useGroup, useSettlements, useDeleteParticipant, useDeleteExpense } from "@/hooks/use-groups";
 import { useRoute } from "wouter";
 import { AddParticipantDialog } from "@/components/AddParticipantDialog";
 import { AddExpenseDialog } from "@/components/AddExpenseDialog";
@@ -7,15 +7,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, ArrowRight, Receipt, Users, Scale, Calendar, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/hooks/use-toast";
 
 export default function GroupDetails() {
   const [, params] = useRoute("/groups/:id");
   const id = params?.id ? parseInt(params.id) : 0;
   const { data: group, isLoading, error } = useGroup(id);
+  const { toast } = useToast();
+  const deleteParticipant = useDeleteParticipant();
+  const deleteExpense = useDeleteExpense();
 
   if (isLoading) return <GroupSkeleton />;
   if (error || !group) return <div className="p-8 text-center">Group not found</div>;
@@ -85,8 +90,8 @@ export default function GroupDetails() {
                     >
                       <Card className="rounded-xl border hover:border-primary/30 transition-colors shadow-sm">
                         <div className="p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-4 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center space-x-4 flex-1 min-w-0">
                               <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg flex-shrink-0">
                                 {expense.description.charAt(0).toUpperCase()}
                               </div>
@@ -98,15 +103,35 @@ export default function GroupDetails() {
                                 </p>
                               </div>
                             </div>
-                            <div className="text-right flex-shrink-0">
-                              <div className="font-bold text-lg font-mono">
-                                {expense.currency} {Number(expense.amount).toFixed(2)}
-                              </div>
-                              {expense.currency !== group.currency && (
-                                <div className="text-xs text-muted-foreground">
-                                  ≈ {group.currency} {(Number(expense.amount) * Number(expense.exchangeRate)).toFixed(2)}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <div className="text-right">
+                                <div className="font-bold text-lg font-mono">
+                                  {expense.currency} {Number(expense.amount).toFixed(2)}
                                 </div>
-                              )}
+                                {expense.currency !== group.currency && (
+                                  <div className="text-xs text-muted-foreground">
+                                    ≈ {group.currency} {(Number(expense.amount) * Number(expense.exchangeRate)).toFixed(2)}
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  deleteExpense.mutate({ groupId: group.id, expenseId: expense.id }, {
+                                    onSuccess: () => {
+                                      toast({ title: "Success", description: "Expense deleted" });
+                                    },
+                                    onError: (error: any) => {
+                                      toast({ title: "Error", description: error.message, variant: "destructive" });
+                                    }
+                                  });
+                                }}
+                                disabled={deleteExpense.isPending}
+                                data-testid="button-delete-expense"
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
                             </div>
                           </div>
                           {expense.receiptPath && (
@@ -155,18 +180,38 @@ export default function GroupDetails() {
                   >
                     <Card className="rounded-xl hover:shadow-md transition-shadow">
                       <div className="p-4 space-y-3">
-                        <div className="flex items-center space-x-4">
-                          <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
-                            <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white font-bold">
-                              {participant.name.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-semibold">{participant.name}</p>
-                            <p className="text-xs text-muted-foreground capitalize">
-                              {participant.type === "group" ? `Group (${participant.members?.length || 0} members)` : "Individual"}
-                            </p>
+                        <div className="flex items-center space-x-4 justify-between">
+                          <div className="flex items-center space-x-4">
+                            <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
+                              <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white font-bold">
+                                {participant.name.slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-semibold">{participant.name}</p>
+                              <p className="text-xs text-muted-foreground capitalize">
+                                {participant.type === "group" ? `Group (${participant.members?.length || 0} members)` : "Individual"}
+                              </p>
+                            </div>
                           </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              deleteParticipant.mutate({ groupId: group.id, participantId: participant.id }, {
+                                onSuccess: () => {
+                                  toast({ title: "Success", description: "Participant deleted" });
+                                },
+                                onError: (error: any) => {
+                                  toast({ title: "Error", description: error.message, variant: "destructive" });
+                                }
+                              });
+                            }}
+                            disabled={deleteParticipant.isPending}
+                            data-testid="button-delete-participant"
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
                         </div>
                         
                         {participant.type === "group" && participant.members && (

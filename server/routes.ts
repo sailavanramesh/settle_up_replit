@@ -40,6 +40,18 @@ export async function registerRoutes(
   });
 
   // === Participants ===
+  app.delete("/api/groups/:groupId/participants/:participantId", async (req, res) => {
+    try {
+      const participantId = parseInt(req.params.participantId);
+      if (isNaN(participantId)) return res.status(400).json({ message: "Invalid ID" });
+
+      await storage.deleteParticipant(participantId);
+      res.status(200).json({ message: "Participant deleted" });
+    } catch (err) {
+      throw err;
+    }
+  });
+
   app.post(api.participants.create.path, async (req, res) => {
     const groupId = parseInt(req.params.id);
     if (isNaN(groupId)) return res.status(400).json({ message: "Invalid ID" });
@@ -104,6 +116,18 @@ export async function registerRoutes(
         console.error("Expense validation error:", err);
         return res.status(400).json({ message: err.errors[0].message });
       }
+      throw err;
+    }
+  });
+
+  app.delete("/api/groups/:groupId/expenses/:expenseId", async (req, res) => {
+    try {
+      const expenseId = parseInt(req.params.expenseId);
+      if (isNaN(expenseId)) return res.status(400).json({ message: "Invalid ID" });
+
+      await storage.deleteExpense(expenseId);
+      res.status(200).json({ message: "Expense deleted" });
+    } catch (err) {
       throw err;
     }
   });

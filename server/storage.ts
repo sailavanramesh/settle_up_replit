@@ -20,12 +20,14 @@ export interface IStorage {
   getParticipants(groupId: number): Promise<ParticipantResponse[]>;
   createParticipant(participant: InsertParticipant): Promise<Participant>;
   createGroupParticipant(groupId: number, name: string, members: Array<{ name: string; weight: number }>): Promise<ParticipantResponse>;
+  deleteParticipant(participantId: number): Promise<void>;
 
   // Expenses
   getExpenses(groupId: number): Promise<Expense[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   createExpenseWithSplits(expense: InsertExpense, splits: Array<{ participantId: number; amount: number }>): Promise<Expense>;
   getExpenseSplits(expenseId: number): Promise<ExpenseSplit[]>;
+  deleteExpense(expenseId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -139,6 +141,20 @@ export class DatabaseStorage implements IStorage {
 
   async getExpenseSplits(expenseId: number): Promise<ExpenseSplit[]> {
     return await db.select().from(expenseSplits).where(eq(expenseSplits.expenseId, expenseId));
+  }
+
+  async deleteParticipant(participantId: number): Promise<void> {
+    // Delete all child participants if this is a group
+    await db.delete(participants).where(eq(participants.parentParticipantId, participantId));
+    // Delete the participant itself
+    await db.delete(participants).where(eq(participants.id, participantId));
+  }
+
+  async deleteExpense(expenseId: number): Promise<void> {
+    // Delete expense splits first
+    await db.delete(expenseSplits).where(eq(expenseSplits.expenseId, expenseId));
+    // Delete the expense
+    await db.delete(expenses).where(eq(expenses.id, expenseId));
   }
 }
 

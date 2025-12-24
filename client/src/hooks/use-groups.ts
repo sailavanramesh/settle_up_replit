@@ -107,3 +107,39 @@ export function useAddExpense() {
     },
   });
 }
+
+// Delete a participant
+export function useDeleteParticipant() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, participantId }: { groupId: number; participantId: number }) => {
+      const res = await fetch(`/api/groups/${groupId}/participants/${participantId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete participant");
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.groups.get.path, variables.groupId] });
+      queryClient.invalidateQueries({ queryKey: [api.groups.settlements.path, variables.groupId] });
+    },
+  });
+}
+
+// Delete an expense
+export function useDeleteExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, expenseId }: { groupId: number; expenseId: number }) => {
+      const res = await fetch(`/api/groups/${groupId}/expenses/${expenseId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete expense");
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.groups.get.path, variables.groupId] });
+      queryClient.invalidateQueries({ queryKey: [api.groups.settlements.path, variables.groupId] });
+    },
+  });
+}
