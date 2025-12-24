@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { insertGroupSchema, insertParticipantSchema, insertExpenseSchema, groups, participants, expenses } from './schema';
+import { insertGroupSchema, insertExpenseSchema, groups, participants, expenses } from './schema';
 
 // ============================================
 // SHARED ERROR SCHEMAS
@@ -42,7 +42,7 @@ export const api = {
       method: 'GET' as const,
       path: '/api/groups/:id',
       responses: {
-        200: z.custom<typeof groups.$inferSelect & { participants: typeof participants.$inferSelect[]; expenses: (typeof expenses.$inferSelect & { paidBy?: typeof participants.$inferSelect })[] }>(),
+        200: z.custom<typeof groups.$inferSelect & { participants: any[]; expenses: any[] }>(),
         404: errorSchemas.notFound,
       },
     },
@@ -66,9 +66,23 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/groups/:id/participants',
-      input: insertParticipantSchema.omit({ groupId: true }), // groupId comes from URL
+      input: z.union([
+        z.object({
+          name: z.string(),
+          type: z.literal("individual"),
+          weight: z.number().positive().optional()
+        }),
+        z.object({
+          name: z.string(),
+          type: z.literal("group"),
+          members: z.array(z.object({
+            name: z.string(),
+            weight: z.number().positive()
+          }))
+        })
+      ]),
       responses: {
-        201: z.custom<typeof participants.$inferSelect>(),
+        201: z.custom<typeof participants.$inferSelect & { members?: any[] }>(),
         400: errorSchemas.validation,
       },
     },
@@ -77,7 +91,7 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/groups/:id/expenses',
-      input: insertExpenseSchema.omit({ groupId: true }), // groupId comes from URL
+      input: insertExpenseSchema.omit({ groupId: true }),
       responses: {
         201: z.custom<typeof expenses.$inferSelect>(),
         400: errorSchemas.validation,

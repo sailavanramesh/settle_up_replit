@@ -8,7 +8,7 @@ import { z } from "zod";
 export const groups = pgTable("groups", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  currency: text("currency").default("AUD").notNull(), // Default currency for the group
+  currency: text("currency").default("AUD").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -16,21 +16,21 @@ export const participants = pgTable("participants", {
   id: serial("id").primaryKey(),
   groupId: integer("group_id").notNull(),
   name: text("name").notNull(),
+  type: text("type").default("individual").notNull(), // 'individual' or 'group'
+  parentParticipantId: integer("parent_participant_id"), // For nested members in group participants
+  weight: numeric("weight").default("1.0").notNull(), // Weight for expense splitting
 });
 
 export const expenses = pgTable("expenses", {
   id: serial("id").primaryKey(),
   groupId: integer("group_id").notNull(),
   description: text("description").notNull(),
-  amount: numeric("amount").notNull(), // Amount in the expense's currency
-  currency: text("currency").notNull(), // The currency this expense was paid in
-  exchangeRate: numeric("exchange_rate").default("1.0"), // Rate to convert to group currency (1.0 if same)
+  amount: numeric("amount").notNull(),
+  currency: text("currency").notNull(),
+  exchangeRate: numeric("exchange_rate").default("1.0"),
   paidByParticipantId: integer("paid_by_participant_id").notNull(),
   date: timestamp("date").defaultNow(),
 });
-
-// For MVP, we assume expenses are split equally among all group participants.
-// In a full version, we would add an 'expense_splits' table.
 
 // === RELATIONS ===
 
@@ -43,6 +43,13 @@ export const participantsRelations = relations(participants, ({ one, many }) => 
   group: one(groups, {
     fields: [participants.groupId],
     references: [groups.id],
+  }),
+  parent: one(participants, {
+    fields: [participants.parentParticipantId],
+    references: [participants.id],
+  }),
+  members: many(participants, {
+    relationName: "group_members",
   }),
   expensesPaid: many(expenses),
 }));
@@ -76,22 +83,41 @@ export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
 // Request types
 export type CreateGroupRequest = InsertGroup;
-export type AddParticipantRequest = InsertParticipant;
+
+// For participants, support both individual and group with members
+export type AddIndividualParticipantRequest = {
+  name: string;
+  type: "individual";
+  weight?: number;
+};
+
+export type AddGroupParticipantRequest = {
+  name: string;
+  type: "group";
+  members: Array<{
+    name: string;
+    weight: number;
+  }>;
+};
+
+export type AddParticipantRequest = AddIndividualParticipantRequest | AddGroupParticipantRequest;
 export type CreateExpenseRequest = InsertExpense;
 
 // Response types
 export type GroupResponse = Group;
-export type ParticipantResponse = Participant;
-export type ExpenseResponse = Expense & { paidBy?: Participant }; // Include payer details in response often
+export type ParticipantResponse = Participant & {
+  members?: ParticipantResponse[];
+};
+export type ExpenseResponse = Expense & { paidBy?: Participant };
 
 export type GroupDetailsResponse = Group & {
-  participants: Participant[];
+  participants: ParticipantResponse[];
   expenses: ExpenseResponse[];
 };
 
 export type Transaction = {
-  from: string; // Participant Name
-  to: string;   // Participant Name
+  from: string;
+  to: string;
   amount: number;
   currency: string;
 };

@@ -4,9 +4,9 @@ import {
   type Group, type InsertGroup,
   type Participant, type InsertParticipant,
   type Expense, type InsertExpense,
-  type GroupDetailsResponse
+  type GroupDetailsResponse, type ParticipantResponse
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // Groups
@@ -16,8 +16,9 @@ export interface IStorage {
   createGroup(group: InsertGroup): Promise<Group>;
 
   // Participants
-  getParticipants(groupId: number): Promise<Participant[]>;
+  getParticipants(groupId: number): Promise<ParticipantResponse[]>;
   createParticipant(participant: InsertParticipant): Promise<Participant>;
+  createGroupParticipant(groupId: number, name: string, members: Array<{ name: string; weight: number }>): Promise<ParticipantResponse>;
 
   // Expenses
   getExpenses(groupId: number): Promise<Expense[]>;
@@ -38,11 +39,9 @@ export class DatabaseStorage implements IStorage {
     const [group] = await db.select().from(groups).where(eq(groups.id, id));
     if (!group) return undefined;
 
-    const groupParticipants = await db.select().from(participants).where(eq(participants.groupId, id));
+    const groupParticipants = await this.getParticipants(id);
     const groupExpenses = await db.select().from(expenses).where(eq(expenses.groupId, id)).orderBy(desc(expenses.date));
 
-    // Enrich expenses with paidBy name if needed, but for now just raw data
-    // Ideally we join, but keeping it simple for now
     const expensesWithPayer = await Promise.all(groupExpenses.map(async (exp) => {
         const [payer] = await db.select().from(participants).where(eq(participants.id, exp.paidByParticipantId));
         return { ...exp, paidBy: payer };
@@ -60,13 +59,57 @@ export class DatabaseStorage implements IStorage {
     return newGroup;
   }
 
-  async getParticipants(groupId: number): Promise<Participant[]> {
-    return await db.select().from(participants).where(eq(participants.groupId, groupId));
+  async getParticipants(groupId: number): Promise<ParticipantResponse[]> {
+    // Get only top-level participants (no parent)
+    const topLevel = await db.select().from(participants)
+      .where(eq(participants.groupId, groupId))
+      .orderBy(participants.id);
+
+    // For each participant that is a group, fetch its members
+    const result = await Promise.all(topLevel.map(async (p) => {
+      if (p.type === 'group') {
+        const members = await db.select().from(participants)
+          .where(eq(participants.parentParticipantId, p.id))
+          .orderBy(participants.id);
+        return { ...p, members };
+      }
+      return p;
+    }));
+
+    return result;
   }
 
   async createParticipant(participant: InsertParticipant): Promise<Participant> {
     const [newParticipant] = await db.insert(participants).values(participant).returning();
     return newParticipant;
+  }
+
+  async createGroupParticipant(groupId: number, name: string, members: Array<{ name: string; weight: number }>): Promise<ParticipantResponse> {
+    // Create the group participant
+    const [groupParticipant] = await db.insert(participants).values({
+      groupId,
+      name,
+      type: "group",
+      weight: "1.0"
+    }).returning();
+
+    // Create member participants linked to the group
+    const createdMembers = await Promise.all(
+      members.map(m =>
+        db.insert(participants).values({
+          groupId,
+          name: m.name,
+          type: "individual",
+          weight: String(m.weight),
+          parentParticipantId: groupParticipant.id
+        }).then(result => result[0] || {})
+      )
+    );
+
+    return {
+      ...groupParticipant,
+      members: createdMembers
+    };
   }
 
   async getExpenses(groupId: number): Promise<Expense[]> {

@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { insertGroupSchema, insertParticipantSchema, insertExpenseSchema } from "@shared/schema";
+import { insertGroupSchema, insertExpenseSchema } from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -45,8 +45,29 @@ export async function registerRoutes(
     if (isNaN(groupId)) return res.status(400).json({ message: "Invalid ID" });
 
     try {
-      const input = insertParticipantSchema.omit({ groupId: true }).parse(req.body);
-      const participant = await storage.createParticipant({ ...input, groupId });
+      const body = req.body;
+      
+      // Check if it's a group participant with members
+      if (body.type === "group" && Array.isArray(body.members)) {
+        const participant = await storage.createGroupParticipant(groupId, body.name, body.members);
+        return res.status(201).json(participant);
+      }
+
+      // Otherwise create individual participant
+      const input = z.object({
+        name: z.string(),
+        type: z.enum(["individual", "group"]).optional(),
+        weight: z.coerce.number().positive().optional().default(1.0)
+      }).parse(body);
+
+      const participant = await storage.createParticipant({
+        groupId,
+        name: input.name,
+        type: input.type || "individual",
+        weight: String(input.weight),
+        parentParticipantId: null
+      });
+      
       res.status(201).json(participant);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -62,10 +83,9 @@ export async function registerRoutes(
     if (isNaN(groupId)) return res.status(400).json({ message: "Invalid ID" });
 
     try {
-        // Coerce types properly
         const bodyWithTypes = {
             ...req.body,
-            amount: String(req.body.amount), // Ensure string for decimal/numeric
+            amount: String(req.body.amount),
             exchangeRate: req.body.exchangeRate ? String(req.body.exchangeRate) : "1.0",
             paidByParticipantId: Number(req.body.paidByParticipantId)
         };
@@ -90,27 +110,57 @@ export async function registerRoutes(
     const group = await storage.getGroupDetails(groupId);
     if (!group) return res.status(404).json({ message: "Group not found" });
 
-    // Calculate balances
+    // Calculate balances with weighted splitting
     const balances: Record<number, number> = {};
-    // Initialize balances
-    group.participants.forEach(p => balances[p.id] = 0);
+    
+    // Initialize balances for all individual participants only
+    const getAllIndividuals = (participants: any[]): any[] => {
+      let individuals: any[] = [];
+      participants.forEach(p => {
+        if (p.type === "individual") {
+          individuals.push(p);
+        } else if (p.type === "group" && p.members) {
+          individuals = individuals.concat(p.members);
+        }
+      });
+      return individuals;
+    };
 
-    const participantsMap = new Map(group.participants.map(p => [p.id, p]));
+    const individuals = getAllIndividuals(group.participants);
+    individuals.forEach(p => balances[p.id] = 0);
 
+    const participantsMap = new Map(individuals.map(p => [p.id, p]));
+
+    // For each expense, split by weights
     group.expenses.forEach(expense => {
-      // Calculate amount in group currency
       const amount = parseFloat(expense.amount) * parseFloat(expense.exchangeRate || "1.0");
       const payerId = expense.paidByParticipantId;
       
-      // Split equally among all participants (for MVP)
-      const splitAmount = amount / group.participants.length;
+      // Get the participant who paid
+      let splitParticipants: any[] = [];
+      const paidByParticipant = group.participants.find(p => p.id === payerId || (p.members && p.members.find((m: any) => m.id === payerId)));
+      
+      if (paidByParticipant?.type === "group") {
+        splitParticipants = paidByParticipant.members || [];
+      } else {
+        splitParticipants = [paidByParticipant].filter(Boolean);
+      }
 
-      // Payer gets credit for the full amount
+      // Calculate total weight
+      const totalWeight = splitParticipants.reduce((sum: number, p: any) => sum + parseFloat(p.weight || "1.0"), 0);
+
+      // Payer (or their group) gets credit for full amount
       balances[payerId] = (balances[payerId] || 0) + amount;
 
-      // Everyone (including payer) gets debited their share
-      group.participants.forEach(p => {
-        balances[p.id] = (balances[p.id] || 0) - splitAmount;
+      // Split expense among individuals based on weight
+      individuals.forEach(individual => {
+        // Check if this individual is in a split group or is the payer
+        const isInSplitGroup = splitParticipants.some((p: any) => p.id === individual.id);
+        if (isInSplitGroup) {
+          const weight = parseFloat(splitParticipants.find((p: any) => p.id === individual.id)?.weight || "1.0");
+          const splitAmount = (amount * weight) / totalWeight;
+          balances[individual.id] = (balances[individual.id] || 0) - splitAmount;
+        }
       });
     });
 
@@ -119,28 +169,23 @@ export async function registerRoutes(
     const debtors = [];
     const creditors = [];
 
-    // Separate into debtors and creditors
     for (const [idStr, amount] of Object.entries(balances)) {
       const id = parseInt(idStr);
-      // Round to 2 decimal places to avoid floating point issues
       const roundedAmount = Math.round(amount * 100) / 100;
       
       if (roundedAmount < -0.01) debtors.push({ id, amount: roundedAmount });
       if (roundedAmount > 0.01) creditors.push({ id, amount: roundedAmount });
     }
 
-    // Sort by magnitude (heuristic for fewer transactions)
-    debtors.sort((a, b) => a.amount - b.amount); // ascending (most negative first)
-    creditors.sort((a, b) => b.amount - a.amount); // descending (most positive first)
+    debtors.sort((a, b) => a.amount - b.amount);
+    creditors.sort((a, b) => b.amount - a.amount);
 
-    let i = 0; // debtors index
-    let j = 0; // creditors index
+    let i = 0;
+    let j = 0;
 
     while (i < debtors.length && j < creditors.length) {
       const debtor = debtors[i];
       const creditor = creditors[j];
-
-      // The amount to settle is the minimum of what debtor owes and creditor is owed
       const amount = Math.min(Math.abs(debtor.amount), creditor.amount);
       
       transactions.push({
@@ -150,11 +195,9 @@ export async function registerRoutes(
         currency: group.currency
       });
 
-      // Update remaining amounts
       debtor.amount += amount;
       creditor.amount -= amount;
 
-      // Check if settled (within small epsilon)
       if (Math.abs(debtor.amount) < 0.01) i++;
       if (creditor.amount < 0.01) j++;
     }
@@ -170,9 +213,14 @@ export async function registerRoutes(
       currency: "AUD"
     });
     
-    const alice = await storage.createParticipant({ groupId: group.id, name: "Alice" });
-    const bob = await storage.createParticipant({ groupId: group.id, name: "Bob" });
-    const charlie = await storage.createParticipant({ groupId: group.id, name: "Charlie" });
+    const alice = await storage.createParticipant({ groupId: group.id, name: "Alice", type: "individual", weight: "1.0", parentParticipantId: null });
+    const bob = await storage.createParticipant({ groupId: group.id, name: "Bob", type: "individual", weight: "1.0", parentParticipantId: null });
+    
+    // Create a group participant with weighted members
+    const coupleGroup = await storage.createGroupParticipant(group.id, "Couple (Charlie & Diana)", [
+      { name: "Charlie", weight: 0.6 },
+      { name: "Diana", weight: 0.4 }
+    ]);
 
     await storage.createExpense({
       groupId: group.id,
@@ -185,11 +233,11 @@ export async function registerRoutes(
 
     await storage.createExpense({
       groupId: group.id,
-      description: "Drinks",
-      amount: "60.00",
+      description: "Accommodation",
+      amount: "100.00",
       currency: "AUD",
       exchangeRate: "1.0",
-      paidByParticipantId: bob.id
+      paidByParticipantId: coupleGroup.id
     });
   }
 
