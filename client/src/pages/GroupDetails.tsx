@@ -153,7 +153,8 @@ export default function GroupDetails() {
                                 </div>
                                 {expense.currency !== group.currency && (
                                   <div className="text-xs text-muted-foreground">
-                                    ≈ {group.currency} {(Number(expense.amount) * Number(expense.exchangeRate)).toFixed(2)}
+                                    <div>≈ {group.currency} {(Number(expense.amount) * Number(expense.exchangeRate)).toFixed(2)}</div>
+                                    <div className="text-[10px] opacity-70">1 {expense.currency} = {Number(expense.exchangeRate).toFixed(4)} {group.currency}</div>
                                   </div>
                                 )}
                               </div>

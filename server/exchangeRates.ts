@@ -39,7 +39,7 @@ export async function getExchangeRate(
     return { rate: apiResult, source: "api", date: dateStr };
   }
 
-  const fallbackResult = await fetchRateFromFallbackAPI(fromCurrency, toCurrency);
+  const fallbackResult = await fetchRateFromFallbackAPI(fromCurrency, toCurrency, dateStr);
   if (fallbackResult) {
     await cacheRate(fromCurrency, toCurrency, normalizedDate, fallbackResult);
     return { rate: fallbackResult, source: "fallback", date: dateStr };
@@ -130,14 +130,32 @@ async function fetchRateFromPrimaryAPI(
 
 async function fetchRateFromFallbackAPI(
   fromCurrency: string,
-  toCurrency: string
+  toCurrency: string,
+  dateStr: string
 ): Promise<number | null> {
-  const url = `https://open.er-api.com/v6/latest/${fromCurrency}`;
+  // First try Frankfurter API (supports historical dates, free, no API key)
+  const frankfurterUrl = `https://api.frankfurter.app/${dateStr}?from=${fromCurrency}&to=${toCurrency}`;
   
   try {
-    const response = await fetch(url);
+    const response = await fetch(frankfurterUrl);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.rates && data.rates[toCurrency]) {
+        console.log(`Frankfurter rate for ${fromCurrency}->${toCurrency} on ${dateStr}: ${data.rates[toCurrency]}`);
+        return Number(data.rates[toCurrency]);
+      }
+    }
+  } catch (error) {
+    console.error("Frankfurter API failed:", error);
+  }
+
+  // Fallback to open.er-api (latest rates only)
+  const openErUrl = `https://open.er-api.com/v6/latest/${fromCurrency}`;
+  
+  try {
+    const response = await fetch(openErUrl);
     if (!response.ok) {
-      console.error("Fallback exchange rate API error:", response.status);
+      console.error("Open ER API error:", response.status);
       return null;
     }
 
@@ -149,7 +167,7 @@ async function fetchRateFromFallbackAPI(
 
     return Number(data.rates[toCurrency]);
   } catch (error) {
-    console.error("Failed to fetch from fallback API:", error);
+    console.error("Failed to fetch from Open ER API:", error);
     return null;
   }
 }

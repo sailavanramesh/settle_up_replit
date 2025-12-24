@@ -506,19 +506,40 @@ export async function registerRoutes(
 
         const amount = parseFloat(row[amountIdx].replace(/,/g, ''));
         const currency = row[currencyIdx];
+        const dateStr = row[dateIdx];
+        
+        // Parse date - expected format: DD/MM/YYYY or similar
+        let expenseDate = new Date();
+        if (dateStr) {
+          const parts = dateStr.split('/');
+          if (parts.length === 3) {
+            // Try DD/MM/YYYY format
+            const [day, month, year] = parts.map(p => parseInt(p));
+            expenseDate = new Date(year, month - 1, day);
+          } else {
+            // Try parsing as ISO or other format
+            const parsed = new Date(dateStr);
+            if (!isNaN(parsed.getTime())) {
+              expenseDate = parsed;
+            }
+          }
+        }
         
         // Use first participant that has a split as payer (or Deva)
         let paidByName = 'Deva';
         let paidById = participantMap[paidByName] || Object.values(participantMap)[0];
 
-        const expense = await storage.createExpense({
+        const expense = await storage.createExpenseWithSplits({
           groupId,
           description: row[expenseIdx],
           amount: amount.toString(),
           currency,
           exchangeRate: "1.0",
-          paidByParticipantId: paidById
-        });
+          paidByParticipantId: paidById,
+          splitType: "equal",
+          receiptPath: null,
+          date: expenseDate
+        }, []);
 
         // Create splits based on weights
         const splits = [];
